@@ -144,7 +144,6 @@ h1, h2 { font-family: var(--heading); font-weight: 650; }
 .tv-picture { position: relative; aspect-ratio: 16 / 9; overflow: hidden; background: #100d0b; }
 #television { position: absolute; inset: 0 auto auto 0; display: block; border: 0; }
 .scene-shade { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(180deg, #0e0c0a49, transparent 18%, transparent 78%, #120d0b51); }
-.move-veil { position: absolute; inset: 0; z-index: 2; background: #191411; opacity: 0; pointer-events: none; }
 .scene-top, .scene-bottom { position: absolute; display: flex; align-items: center; justify-content: space-between; gap: 12px; pointer-events: none; left: 18px; right: 18px; z-index: 3; }
 .scene-top { top: 17px; }
 .scene-bottom { bottom: 19px; align-items: end; }
@@ -172,7 +171,6 @@ h1, h2 { font-family: var(--heading); font-weight: 650; }
 .stage-notice { position: absolute; z-index: 3; top: 63px; left: 14px; right: 14px; width: fit-content; max-width: calc(100% - 28px); margin: 0; padding: 7px 11px; border: 1px solid #e1ba8452; border-radius: 9px; background: #211813ed; font-size: 12px; color: #fff0d9; }
 
 .hotspots { position: absolute; inset: 0; pointer-events: none; }
-.stage.is-relocating .hotspots { visibility: hidden; }
 .hotspot {
   position: absolute;
   z-index: 2;
@@ -233,9 +231,6 @@ h1, h2 { font-family: var(--heading); font-weight: 650; }
 .room-option strong { display: block; white-space: nowrap; font-size: 14px; color: #fff0de; }
 .room-option small { display: block; margin-bottom: 3px; color: #f5d3a4; font-size: 9px; letter-spacing: .09em; }
 .navigation-hint { display: flex; gap: 8px; justify-content: space-between; align-items: center; margin: 12px 2px 0; color: var(--muted); font-size: 12px; }
-.movement-picker { display: flex; gap: 4px; padding: 2px; background: #241c16; border: 1px solid #4b382b; border-radius: 9px; }
-.movement-picker .choice { min-height: 29px; padding: 3px 8px; white-space: nowrap; font-size: 11px; gap: 4px; }
-.movement-picker .choice .icon { width: 13px; height: 13px; }
 .key-hint { white-space: nowrap; }
 kbd { display: inline-block; min-width: 19px; padding: 2px 4px; border: 1px solid #594536; background: #2c231c; border-radius: 4px; text-align: center; color: #f4d2a7; }
 
@@ -464,8 +459,7 @@ body:has(.travel-dialog[open], .tv-screen[open]) { overflow: hidden; }
   .room-picker { margin-top: 6px; gap: 5px; }
   .room-option { min-height: 44px; padding: 5px 7px; border-radius: 9px; }
   .room-option strong { font-size: 12px; }
-  .navigation-hint { justify-content: end; margin-top: 5px; }
-  .navigation-hint > span { display: none; }
+  .navigation-hint { display: none; }
   .panel {
     max-height: calc(100dvh - 60px - env(safe-area-inset-bottom));
     overflow-y: auto;
@@ -580,7 +574,6 @@ body:has(.travel-dialog[open], .tv-screen[open]) { overflow: hidden; }
           </dialog>
         </div>
         <div class="scene-shade" aria-hidden="true"></div>
-        <div class="move-veil" aria-hidden="true"></div>
         <div class="scene-top">
           <div class="scene-badge"><span class="live-dot"></span><span id="scene-weather">冬日 · 夜晚 · 下雪</span></div>
           <div class="stage-tools">
@@ -599,8 +592,8 @@ body:has(.travel-dialog[open], .tv-screen[open]) { overflow: hidden; }
 
       <nav class="room-picker" aria-label="选择房间" id="room-picker"></nav>
       <div class="navigation-hint" id="navigation-help">
-        <span id="navigation-text">点地面移动，拖动可转身、抬头或低头</span>
-        <div class="movement-picker" id="movement" role="group" aria-label="移动方式"></div>
+        <span id="navigation-text">点地面平稳走过去，拖动可转身、抬头或低头</span>
+        <span class="key-hint"><kbd>1</kbd>–<kbd>4</kbd> 走向房间</span>
       </div>
     </div>
 
@@ -5743,6 +5736,41 @@ function cabinWalkRoute(from, to) {
   return final ? route.concat(stairEnd(to.layer), exit, final) : null;
 }
 
+function cabinRoundTurns(from, route) {
+  const rounded = [];
+  for (let i = 0; i < route.length - 1; i++) {
+    const corner = route[i];
+    const previous = i ? route[i - 1] : from;
+    const next = route[i + 1];
+    if (corner.layer === "stairs" || previous.layer !== corner.layer || next.layer !== corner.layer) {
+      rounded.push(corner);
+      continue;
+    }
+    const before = Math.hypot(previous.x - corner.x, previous.z - corner.z);
+    const after = Math.hypot(next.x - corner.x, next.z - corner.z);
+    const cut = Math.min(.34, before * .32, after * .32);
+    if (cut < .035) {
+      rounded.push(corner);
+      continue;
+    }
+    const entryX = corner.x + (previous.x - corner.x) * cut / before;
+    const entryZ = corner.z + (previous.z - corner.z) * cut / before;
+    const exitX = corner.x + (next.x - corner.x) * cut / after;
+    const exitZ = corner.z + (next.z - corner.z) * cut / after;
+    const curve = Array.from({ length: 7 }, (_, j) => {
+      const t = j / 6, s = 1 - t;
+      return cabinLocation(corner.layer, s * s * entryX + 2 * s * t * corner.x + t * t * exitX,
+        s * s * entryZ + 2 * s * t * corner.z + t * t * exitZ);
+    });
+    const clear = curve.every((p, j) => cabinCanStand(p.layer, p.x, p.z) &&
+      cabinLineClear(j ? curve[j - 1] : (rounded.at(-1) || from), p)) && cabinLineClear(curve.at(-1), next);
+    if (clear) rounded.push(...curve);
+    else rounded.push(corner);
+  }
+  rounded.push(route.at(-1));
+  return rounded;
+}
+
 function cabinRoomAt(point) {
   if (point.layer === "loft" || point.y > CABIN_STAIRS.height - .24) return "loft";
   if (point.z > -4.73) return "living";
@@ -7906,7 +7934,6 @@ class CabinTour {
     this.options = options;
     this.stage = options.stage;
     this.canvas = options.canvas;
-    this.veil = this.stage.querySelector(".move-veil");
     this.model = new CabinModel(T, options.mediaUrl, options.atlas);
     this.model.onScenery = () => { this.dirty = true; };
     this.renderer = new T.WebGLRenderer({ canvas: this.canvas, antialias: true,
@@ -7988,76 +8015,14 @@ class CabinTour {
   }
 
   weather(climate) {
-    if (climate.motion === "comfort" && this.route.length) {
-      this.relocate(this.route.at(-1), this.yaw, this.pitch, "已到落脚点");
-    }
     this.model.setClimate(climate);
     this.model.animate(this.options.reducedMotion.matches ? 0 : performance.now() / 1000);
     this.dirty = true;
   }
 
-  placeRoom(room) {
-    const target = CABIN_SCENES[room];
-    this.relocate(cabinLocation(target.layer, target.x, target.z), target.yaw, target.pitch, "已来到" + target.name);
-  }
-
-  relocate(point, yaw, pitch, message) {
-    this.route = [];
-    this.marker.visible = false;
-    this.markerUntil = 0;
-    const target = { point, yaw, pitch, message };
-    if (this.options.reducedMotion.matches) {
-      this.transfer = null;
-      this.veil.style.opacity = "0";
-      this.stage.classList.remove("is-relocating");
-      this.arrive(target);
-      return;
-    }
-    const previous = this.transfer;
-    this.transfer = {
-      target,
-      start: previous && !previous.applied ? previous.start : performance.now(),
-      applied: false
-    };
-    this.stage.classList.add("is-relocating");
-  }
-
-  arrive({ point, yaw, pitch, message }) {
-    this.point = point;
-    this.yaw = yaw;
-    this.pitch = pitch;
-    this.updateRoom();
-    this.dirty = true;
-    this.options.status(message);
-  }
-
-  fadeMove(now) {
-    const transfer = this.transfer;
-    const elapsed = now - transfer.start;
-    const fadeOut = 105;
-    const fadeIn = 165;
-    const reduced = this.options.reducedMotion.matches;
-    if (elapsed < fadeOut && !reduced) {
-      const t = Math.max(0, elapsed / fadeOut);
-      this.veil.style.opacity = String(t * t * (3 - 2 * t));
-      return;
-    }
-    if (!transfer.applied) {
-      transfer.applied = true;
-      transfer.arrived = now;
-      this.arrive(transfer.target);
-    }
-    const t = reduced ? 0 : Math.max(0, 1 - (now - transfer.arrived) / fadeIn);
-    this.veil.style.opacity = String(t * t * (3 - 2 * t));
-    if (!t) {
-      this.transfer = null;
-      this.stage.classList.remove("is-relocating");
-    }
-  }
-
   walkToRoom(room) {
     const target = CABIN_SCENES[room];
-    this.walkTo(cabinLocation(target.layer, target.x, target.z));
+    this.walkTo(cabinLocation(target.layer, target.x, target.z), target.name);
   }
 
   resetLook() {
@@ -8076,7 +8041,6 @@ class CabinTour {
 
   keyLook(key) {
     if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(key)) return false;
-    if (this.transfer) return true;
     const dx = key === "ArrowLeft" ? .16 : key === "ArrowRight" ? -.16 : 0;
     const dy = key === "ArrowUp" ? .13 : key === "ArrowDown" ? -.13 : 0;
     this.turn(this.yaw + dx, this.pitch + dy);
@@ -8086,7 +8050,7 @@ class CabinTour {
   bindPointer() {
     const stage = this.stage;
     stage.addEventListener("pointerdown", (event) => {
-      if (this.lost || this.gesture || this.transfer || event.button !== 0 || event.target.closest("button, a, dialog")) return;
+      if (this.lost || this.gesture || event.button !== 0 || event.target.closest("button, a, dialog")) return;
       this.gesture = {
         id: event.pointerId, x: event.clientX, y: event.clientY,
         yaw: this.yaw, pitch: this.pitch, dragging: false
@@ -8096,7 +8060,7 @@ class CabinTour {
     stage.addEventListener("pointermove", (event) => {
       const gesture = this.gesture;
       if (!gesture && event.pointerType === "mouse" && event.target === this.canvas) {
-        if (this.route.length || this.transfer || performance.now() - (this.lastHover || 0) < 34) return;
+        if (this.route.length || performance.now() - (this.lastHover || 0) < 34) return;
         this.lastHover = performance.now();
         const point = this.floorAt(event.clientX, event.clientY);
         if (point) this.mark(point, .54);
@@ -8198,17 +8162,13 @@ class CabinTour {
     this.dirty = true;
   }
 
-  walkTo(point) {
-    const route = cabinWalkRoute(this.point, point);
-    if (!route) {
+  walkTo(point, roomName) {
+    const path = cabinWalkRoute(this.point, point);
+    if (!path?.length) {
       this.options.status("这个落脚点暂时走不到，试试附近的地面", true);
       return;
     }
-    if (this.options.climate.motion !== "walk" || this.options.reducedMotion.matches) {
-      this.relocate(point, this.yaw, this.pitch, "已到落脚点");
-      return;
-    }
-    if (this.transfer) return;
+    const route = cabinRoundTurns(this.point, path);
     this.mark(point, .96);
     this.markerUntil = 0;
     this.route = route;
@@ -8217,12 +8177,14 @@ class CabinTour {
       const from = i ? route[i - 1] : this.point;
       return distance + Math.hypot(next.x - from.x, next.y - from.y, next.z - from.z);
     }, 0);
-    this.options.status("正在走向落脚点");
+    this.arrivalMessage = roomName ? "已来到" + roomName : "已到落脚点";
+    this.options.status(roomName ? "正在走向" + roomName : "正在走向落脚点");
   }
 
   move(delta, now) {
-    const brakingSpeed = Math.max(.21, Math.sqrt(this.walkRemaining * 3.8));
-    this.walkRate = Math.min(1.44, this.walkRate + delta * 2.75, brakingSpeed);
+    const brakingSpeed = Math.max(.14, Math.sqrt(this.walkRemaining * 2.8));
+    const pace = this.options.reducedMotion.matches ? .78 : 1.22;
+    this.walkRate = Math.min(pace, this.walkRate + delta * 1.72, brakingSpeed);
     let budget = delta * this.walkRate;
     this.walkRemaining = Math.max(0, this.walkRemaining - budget);
     while (this.route.length && budget > 0) {
@@ -8247,7 +8209,7 @@ class CabinTour {
     this.updateRoom();
     if (!this.route.length) {
       this.markerUntil = now + 460;
-      this.options.status("已到落脚点");
+      this.options.status(this.arrivalMessage);
     }
   }
 
@@ -8292,15 +8254,11 @@ class CabinTour {
       this.lastFrame = now;
       return;
     }
-    if (now - this.lastFrame < 21) return;
-    const delta = Math.min(.09, (now - this.lastFrame) / 1000);
+    const moving = this.route.length || this.gesture?.dragging;
+    if (!moving && now - this.lastFrame < 21) return;
+    const delta = Math.min(.060, (now - this.lastFrame) / 1000);
     this.lastFrame = now;
-    if (this.transfer) this.fadeMove(now);
-    if (this.route.length) {
-      if (this.options.reducedMotion.matches) {
-        this.relocate(this.route.at(-1), this.yaw, this.pitch, "已到落脚点");
-      } else this.move(delta, now);
-    }
+    if (this.route.length) this.move(delta, now);
     if (this.markerUntil && now >= this.markerUntil) {
       this.marker.visible = false;
       this.markerUntil = 0;
@@ -8336,7 +8294,6 @@ const weatherOptions = [
 ];
 const lightOptions = [["day", "白天", "sun"], ["night", "夜晚", "moon"]];
 const viewOptions = [["downtown", "美国市中心", "home"], ["newzealand", "新西兰湖山", "leaf"]];
-const movementOptions = [["comfort", "舒适移动", "pin"], ["walk", "平稳步行", "arrow"]];
 const preferenceKey = "four-seasons-loft.weather.v1";
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 const mediaUrl = (name) => window.CABIN_MEDIA?.[name] ?? "assets/" + name;
@@ -8349,7 +8306,6 @@ function readWeather() {
     // Default to a snowy night when storage is unavailable.
   }
   return {
-    motion: prior?.motion === "walk" ? "walk" : "comfort",
     view: viewOptions.some(([id]) => id === prior?.view) ? prior.view : "downtown",
     season: seasonOptions.some(([id]) => id === prior?.season) ? prior.season : "winter",
     weather: weatherOptions.some(([id]) => id === prior?.weather) ? prior.weather : "snow",
@@ -8402,7 +8358,7 @@ function setupChoices(id, key, choices) {
 }
 
 function updateWeather() {
-  for (const [id, key] of [["views", "view"], ["seasons", "season"], ["weathers", "weather"], ["light", "light"], ["movement", "motion"]]) {
+  for (const [id, key] of [["views", "view"], ["seasons", "season"], ["weathers", "weather"], ["light", "light"]]) {
     byId(id).querySelectorAll("button").forEach((button) => {
       button.setAttribute("aria-pressed", String(climate[key] === button.dataset.value));
     });
@@ -8511,7 +8467,7 @@ function setActiveRoom(room) {
 }
 
 function goToRoom(id) {
-  if (tour && !tour.lost) tour.placeRoom(id);
+  if (tour && !tour.lost) tour.walkToRoom(id);
   else {
     setActiveRoom(id);
     showStatus("正在查看" + CABIN_SCENES[id].name + "的参考画面");
@@ -8550,7 +8506,7 @@ function show3D(available) {
   notice.hidden = available;
   notice.textContent = available ? "" : "当前无法加载三维画面，正在显示参考图。可以刷新，或换一个浏览器试试。";
   byId("navigation-text").textContent = available ?
-    "点地面移动，拖动可转身、抬头或低头" : "点房间查看参考图";
+    "点地面平稳走过去，拖动可转身、抬头或低头" : "点房间查看参考图";
   if (!available) {
     for (const { button } of spotButtons) button.hidden = true;
     projectTelevision(null);
@@ -8649,7 +8605,6 @@ setupChoices("seasons", "season", seasonOptions);
 setupChoices("views", "view", viewOptions);
 setupChoices("weathers", "weather", weatherOptions);
 setupChoices("light", "light", lightOptions);
-setupChoices("movement", "motion", movementOptions);
 setActiveRoom("living");
 async function startTour() {
   const atlas = new Image();
@@ -8662,7 +8617,7 @@ async function startTour() {
       status: showStatus, contextState: show3D, onRoom: setActiveRoom,
       televisionPlaying: () => television.hasAttribute("src"), projectTelevision
     });
-    if (activeRoom !== "living") tour.placeRoom(activeRoom);
+    if (activeRoom !== "living") tour.walkToRoom(activeRoom);
     show3D(true);
   } catch (error) {
     console.error("Cabin 3D initialization failed", error);
