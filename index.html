@@ -592,9 +592,88 @@ html.in-immersive, body.in-immersive { overflow: hidden; background: #100d0b; }
   bottom: max(9px, env(safe-area-inset-bottom));
 }
 .immersion-help { top: auto; bottom: calc(100px + env(safe-area-inset-bottom)); max-width: min(450px, calc(100% - 28px)); }
+
+.fridge-note {
+  width: min(355px, calc(100% - 34px));
+  min-height: 179px;
+  border: 1px solid #dbb375;
+  border-radius: 5px 5px 18px 5px;
+  padding: 52px 30px 39px;
+  color: #4e2c19;
+  background: linear-gradient(156deg, #fff0b8, #f5cd79);
+  box-shadow: 0 18px 48px #120a08a6;
+}
+.fridge-note::backdrop { background: #140d098c; }
+.fridge-note form { position: absolute; top: 8px; right: 9px; }
+.fridge-note .icon-button {
+  width: 36px;
+  min-height: 36px;
+  border-color: #9168465c;
+  background: #fff3ca9c;
+  color: #583a25;
+}
+.fridge-note p {
+  font-family: "Kaiti SC", "Songti SC", serif;
+  font-size: clamp(21px, 5vw, 26px);
+  line-height: 1.65;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.stage.reading-book .hotspots { visibility: hidden; }
+.stage.reading-book:has(.cabin-actions:not([hidden])) .scene-bottom .scene-hint { visibility: hidden; }
+
+.book-reader {
+  width: min(620px, calc(100% - 30px));
+  max-height: calc(100dvh - 28px);
+  padding: 14px 17px;
+  border: 1px solid #b18d64;
+  border-radius: 12px;
+  color: #493322;
+  background: #f8eed9;
+  box-shadow: 0 15px 46px #120a08ac;
+  overflow: hidden;
+}
+.book-reader[open] { display: flex; flex-direction: column; }
+.book-reader::backdrop { background: #170e0a9e; }
+.book-reader-heading, .book-reader-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.book-reader-heading h2 { font-size: 20px; }
+.book-reader-heading .icon-button { width: 34px; min-height: 34px; }
+.book-reader-text {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(232px, 100%), 1fr));
+  gap: 14px;
+  overflow: auto;
+  margin-block: 12px;
+  overscroll-behavior: contain;
+}
+.book-reader-text section {
+  min-width: 0;
+  padding: 14px 12px;
+  border: 1px solid #d8c2a6;
+  background: #fff9ec;
+}
+.book-reader-text h3 { font-size: 23px; font-family: "Songti SC", serif; }
+.book-reader-text small { color: #785d45; }
+.book-reader-text p {
+  margin: 12px 0 0;
+  font: 17px/1.67 "Songti SC", serif;
+  white-space: pre-line;
+}
+.book-reader-controls button:disabled { opacity: .45; }
+@media (max-width: 430px) {
+  .stage.reading-book #room-detail, .stage.reading-book #recenter { display: none; }
+}
+.book-reader, .fridge-note { pointer-events: auto; }
+body:has(.book-reader[open], .fridge-note[open]) { overflow: hidden; }
 </style>
   <script defer src="./cabin-engine-66d6a844bc.js"></script>
-  <script defer src="./cabin-world-2f8509d512.js"></script>
+  <script defer src="./cabin-world-8aec5772f6.js"></script>
 </head>
 <body>
   <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -642,6 +721,25 @@ html.in-immersive, body.in-immersive { overflow: hidden; background: #100d0b; }
         <div class="surface" id="surface">
           <img class="room-image" id="room-image" src="./living-preview.jpg" alt="有壁炉、电视和拱窗的复式客厅" width="1536" height="1024" fetchpriority="high" draggable="false">
           <canvas id="cabin-view" class="cabin-view" aria-hidden="true" hidden></canvas>
+          <dialog id="book-reader" class="book-reader" aria-labelledby="book-reader-title">
+            <div class="book-reader-heading">
+              <h2 id="book-reader-title">四时文集</h2>
+              <form method="dialog"><button type="submit" class="icon-button" aria-label="回到手持的书" autofocus><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></form>
+            </div>
+            <div id="book-reader-text" class="book-reader-text" aria-live="polite"></div>
+            <div class="book-reader-controls">
+              <button type="button" class="button outline" id="book-reader-back">上一页</button>
+              <span id="book-reader-number"></span>
+              <button type="button" class="button outline" id="book-reader-next">下一页</button>
+            </div>
+          </dialog>
+          <dialog id="fridge-note" class="fridge-note" aria-labelledby="fridge-note-heading">
+            <form method="dialog">
+              <button type="submit" class="icon-button" aria-label="放回便签" autofocus><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button>
+            </form>
+            <h2 id="fridge-note-heading" class="visually-hidden">冰箱便签</h2>
+            <p>今天也要好好吃饭哦^_^辛苦了～</p>
+          </dialog>
           <dialog id="tv-screen" class="tv-screen" aria-label="客厅电视" hidden>
             <header class="tv-viewer-header">
               <div><p class="eyebrow">客厅电视</p><h2>我可能不会爱你</h2></div>
@@ -666,6 +764,7 @@ html.in-immersive, body.in-immersive { overflow: hidden; background: #100d0b; }
         <div class="scene-top">
           <div class="scene-badge"><span class="live-dot"></span><span id="scene-weather">冬日 · 夜晚 · 下雪</span></div>
           <div class="stage-tools">
+            <button class="interact-toggle" type="button" id="book-reader-open" aria-haspopup="dialog" hidden>大字读书</button>
             <button class="interact-toggle" type="button" id="room-detail" hidden>厨房</button>
             <button class="icon-button" type="button" id="recenter" aria-label="重置朝向" title="重置朝向" hidden><svg class="icon" aria-hidden="true"><use href="#i-reset"/></svg></button>
             <button class="icon-button" type="button" id="immersive" aria-label="沉浸观看" aria-pressed="false" title="沉浸观看"><svg class="icon" aria-hidden="true"><use href="#i-expand"/></svg></button>
